@@ -1,9 +1,9 @@
-import subprocess
+import argparse
 import os
 import os.path as osp
+import subprocess
 import numpy as np
 from imageio import imwrite
-import argparse
 
 mnist_keys = ['train-images-idx3-ubyte', 'train-labels-idx1-ubyte',
               't10k-images-idx3-ubyte', 't10k-labels-idx1-ubyte']
@@ -46,7 +46,7 @@ def extract_mnist(data_dir):
 
     fd = open(os.path.join(data_dir, 'train-labels-idx1-ubyte'))
     loaded = np.fromfile(file=fd, dtype=np.uint8)
-    train_label = np.asarray(loaded[8:].reshape((num_mnist_train)))
+    train_label = np.asarray(loaded[8:].reshape(num_mnist_train))
 
     fd = open(os.path.join(data_dir, 't10k-images-idx3-ubyte'))
     loaded = np.fromfile(file=fd, dtype=np.uint8)
@@ -54,7 +54,7 @@ def extract_mnist(data_dir):
 
     fd = open(os.path.join(data_dir, 't10k-labels-idx1-ubyte'))
     loaded = np.fromfile(file=fd, dtype=np.uint8)
-    test_label = np.asarray(loaded[8:].reshape((num_mnist_test)))
+    test_label = np.asarray(loaded[8:].reshape(num_mnist_test))
 
     return np.concatenate((train_image, test_image)), \
         np.concatenate((train_label, test_label))
@@ -104,30 +104,34 @@ def generator(config):
     count = 1
     for i, split_name in enumerate(['train', 'val', 'test']):
         path = osp.join(config.multimnist_path, split_name)
-        print('Generat images for {} at {}'.format(split_name, path))
+        print('Generate images for {} at {}'.format(split_name, path))
         if not os.path.exists(path):
             os.makedirs(path)
         for j, current_class in enumerate(split_classes[i]):
             class_str = str(current_class)
-            class_str = '0'*(config.num_digit-len(class_str))+class_str
+            req_length = len(class_str)
+            if config.prepend_zeros:
+                class_str = '0'*(config.num_digit-len(class_str))+class_str
+                req_length = config.num_digit
             class_path = osp.join(path, class_str)
             print('{} (progress: {}/{})'.format(class_path, count, len(classes)))
             if not os.path.exists(class_path):
                 os.makedirs(class_path)
             for k in range(config.num_image_per_class):
                 # sample images
-                digits = [int(class_str[l]) for l in range(config.num_digit)]
+                digits = [int(class_str[l]) for l in range(req_length)]
                 imgs = [np.squeeze(image[np.random.choice(indexes[d])]) for d in digits]
-                background = np.zeros((config.image_size)).astype(np.uint8)
+                background = np.zeros(config.image_size).astype(np.uint8)
                 # sample coordinates
-                ys = sample_coordinate(config.image_size[0]-h, config.num_digit)
-                xs = sample_coordinate(config.image_size[1]//config.num_digit-w,
-                                       size=config.num_digit)
+                ys = sample_coordinate(config.image_size[0] - h, req_length)
+                xs = sample_coordinate(config.image_size[1] // req_length - w,
+                                       size=req_length)
                 xs = [l*config.image_size[1]//config.num_digit+xs[l]
-                      for l in range(config.num_digit)]
+                      for l in range(req_length)]
+                ys = ys[0]
                 # combine images
-                for i in range(config.num_digit):
-                    background[ys[i]:ys[i]+h, xs[i]:xs[i]+w] = imgs[i]
+                for i in range(req_length):
+                    background[ys:ys+h, xs[i]:xs[i]+w] = imgs[i]
                 # write the image
                 image_path = osp.join(class_path, '{}_{}.png'.format(k, class_str))
                 # image_path = osp.join(config.multimnist_path, '{}_{}_{}.png'.format(split_name, k, class_str))
@@ -144,16 +148,17 @@ def argparser():
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--mnist_path', type=str, default='./datasets/mnist/',
+    parser.add_argument('--mnist-path', type=str, default='./datasets/mnist/',
                         help='path to *.gz files')
-    parser.add_argument('--multimnist_path', type=str, default='./datasets/multimnist')
-    parser.add_argument('--num_digit', type=int, default=2)
-    parser.add_argument('--train_val_test_ratio', type=int, nargs='+',
+    parser.add_argument('--multimnist-path', type=str, default='./datasets/multimnist')
+    parser.add_argument('--num-digit', type=int, default=2)
+    parser.add_argument('--train-val-test-ratio', type=int, nargs='+',
                         default=[64, 16, 20], help='percentage')
-    parser.add_argument('--image_size', type=int, nargs='+',
+    parser.add_argument('--image-size', type=int, nargs='+',
                         default=[64, 64])
-    parser.add_argument('--num_image_per_class', type=int, default=10000)
-    parser.add_argument('--random_seed', type=int, default=123)
+    parser.add_argument('--num-image-per-class', type=int, default=10000)
+    parser.add_argument('--random-seed', type=int, default=42)
+    parser.add_argument('--prepend-zeros', action='store_true', default=False)
     config = parser.parse_args()
     return config
 
